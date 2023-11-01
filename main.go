@@ -1,18 +1,26 @@
 package main
 
 import (
+	"log"
+
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
 	r := gin.Default()
-	r.GET("/ping", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"message": "pong",
+	r.LoadHTMLGlob("templates/*")
+
+	r.GET("/", func(c *gin.Context) {
+		names := []string{"Yogendra Rana", "Ghanendra Rana"}
+		c.HTML(200, "index.html", gin.H{
+			"message": "Home page!",
+			"names":   names,
 		})
 	})
 
-	// By default gin serves on :8080 unless you specify a PORT in the environment
-	// Make it run on port 8000
-	r.Run("localhost:8000")
+	// By default gin serves on :8080 unless you specify a custom PORT by passing into the Run() method
+	err := r.Run("localhost:8000")
+	if err != nil {
+		log.Fatal(err)
+	}
 }
