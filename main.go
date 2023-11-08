@@ -1,7 +1,7 @@
 package main
 
 import (
-	"go-gin-auth/initializers"
+	"go-gin-auth/src/initializers"
 	"log"
 	"os"
 
@@ -10,18 +10,19 @@ import (
 
 func init() {
 	initializers.LoadEnvVariables()
+	initializers.ConnectDatabase()
 }
 
 func main() {
 	router := gin.New()
-	router.LoadHTMLGlob("views/*")
+	router.LoadHTMLGlob("./src/views/*")
 
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
 	router.Use(gin.ErrorLogger())
 
 	router.GET("/", func(c *gin.Context) {
-		c.File("views/index.html")
+		c.File("./src/views/index.html")
 	})
 
 	// By default gin serves on :8080 unless you specify a custom PORT by passing into the Run() method
