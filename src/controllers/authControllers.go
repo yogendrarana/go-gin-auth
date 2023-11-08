@@ -1,14 +1,15 @@
 package controllers
 
 import (
+	"errors"
 	"go-gin-auth/src/common"
-	"go-gin-auth/src/initializers"
 	"go-gin-auth/src/models"
 	"go-gin-auth/src/utils"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 const (
@@ -22,16 +23,17 @@ type RegisterInput struct {
 	ConfirmPassword string `json:"confirm_password" binding:"required,min=8"`
 }
 
-type SignInInput struct {
+type LoginInput struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required"`
 }
 
+// sign up controller
 func Register(c *gin.Context) {
 	var input RegisterInput
 
-	// get db
-	db := initializers.GetDB()
+	// get db connection
+	db := c.MustGet("db").(*gorm.DB)
 
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -92,34 +94,51 @@ func Register(c *gin.Context) {
 }
 
 // sign in controller
-// func SignIn(c *gin.Context) {
-// 	var input SignInInput
-// 	if err := c.ShouldBindJSON(&input); err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-// 		return
-// 	}
+func Login(c *gin.Context) {
+	var input LoginInput
 
-// 	var user models.User
-// 	result := models.DB.Where("email = ?", input.Email).First(&user)
-// 	if result.Error != nil {
-// 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-// 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
-// 			return
-// 		}
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to find user"})
-// 		return
-// 	}
+	// get db connection
+	db := c.MustGet("db").(*gorm.DB)
 
-// 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
-// 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
-// 		return
-// 	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
-// 	token, err := utils.GenerateToken(user.ID)
-// 	if err != nil {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
-// 		return
-// 	}
+	// check if user already exists
+	var user models.User
+	result := db.Where("email = ?", input.Email).First(&user)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
+			return
+		}
 
-// 	c.JSON(http.StatusOK, gin.H{"token": token})
-// }
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to find user"})
+		return
+	}
+
+	// compare hash password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
+		return
+	}
+
+	accessSignedToken, refreshSignedToken, err := utils.GenerateJWTTokensForUser(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+
+	// set http only cookies (name, value, maxAge, path, domain, secure, httpOnly)
+	c.SetCookie("refresh_token", refreshSignedToken, 86400, "/", "localhost", false, true)
+
+	c.JSON(http.StatusOK, common.APIResponse{
+		Success: true,
+		Message: "User logged in successfully",
+		Data: gin.H{
+			"access_token": accessSignedToken,
+			"user":         user,
+		},
+	})
+}
