@@ -26,5 +26,12 @@ func ConnectDatabase() (*gorm.DB, error) {
 		return nil, err
 	}
 
+	fmt.Println("Database connected")
+
 	return db, err
+}
+
+// GetDB returns a handle to the DB object
+func GetDB() *gorm.DB {
+	return db
 }
