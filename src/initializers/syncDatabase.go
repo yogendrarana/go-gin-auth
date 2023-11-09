@@ -6,4 +6,5 @@ import (
 
 func SyncDatabase() {
 	db.AutoMigrate(&models.User{})
+	db.AutoMigrate(&models.RefreshToken{})
 }
