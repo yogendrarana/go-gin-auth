@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"errors"
 	"fmt"
 	"go-gin-auth/src/models"
 	"go-gin-auth/src/services"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -30,43 +30,71 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		accessToken := authHeaderParts[1]
-		isValidAccess, user := isValidAccessToken(accessToken, c)
+		isValidAccessToken, userIDPtr := checkAccessTokenValidity(accessToken, c)
 
-		c.JSON(http.StatusOK, gin.H{"message": "Access granted"})
+		// if isValidAccessToken=false and userIDPtr=nil, then terminate the request
+		if !isValidAccessToken && userIDPtr == nil {
+			return
+		}
 
-		if isValidAccess && user != nil {
+		// find the user in the database
+		db := c.MustGet("db").(*gorm.DB)
+		userID := *userIDPtr
+		user, err := models.GetUserByID(db, userID)
+
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user"})
+			return
+		}
+
+		if isValidAccessToken {
 			c.Set("user", user)
 			c.Next()
 		}
 
-		if !isValidAccess && user == nil {
-			isValidRefresh := isValidRefreshToken(c)
+		if !isValidAccessToken {
+			refreshToken, err := c.Cookie("refresh_token")
+			if err != nil {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Refresh token not found"})
+				return
+			}
 
-			if isValidRefresh {
-				// Create a new access token
-				newAccessToken, err := services.GenerateAccessToken(user.ID)
+			// check validity of refresh token
+			isValidRefreshToken, err := checkRefreshTokenValidity(refreshToken, user.RefreshTokens)
+			if err != nil {
+				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to compare refresh token hashes"})
+				return
+			}
+
+			// if valid refresh token issue new access token
+			if isValidRefreshToken {
+				// generate access tokens
+				accessSignedToken, err := services.GenerateAccessToken(user.ID)
 				if err != nil {
-					c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate new access token"})
+					c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 					return
 				}
 
-				// Set the new access token in the response header
-				c.Header("Authorization", fmt.Sprintf("Bearer %s", newAccessToken))
+				c.JSON(http.StatusOK, gin.H{"new_access_token": accessSignedToken})
+
+				// set the user in the Gin context
+				c.Set("user", user)
+
+				// Call c.Next() to pass the request to the next handler
 				c.Next()
-			} else {
-				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid refresh token. Please login again."})
+			}
+
+			// if invalid refresh token terminate the request
+			if !isValidRefreshToken {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid refresh token"})
 				return
 			}
 		}
-
 	}
 }
 
 // check validity of access token
-func isValidAccessToken(accessToken string, c *gin.Context) (bool, *models.User) {
-	// get db connection
-	db := c.MustGet("db").(*gorm.DB)
-
+func checkAccessTokenValidity(accessToken string, c *gin.Context) (bool, *uint) {
 	token, err := jwt.Parse(accessToken, func(token *jwt.Token) (interface{}, error) {
 		// not required to check signing method but a good practice
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -76,67 +104,42 @@ func isValidAccessToken(accessToken string, c *gin.Context) (bool, *models.User)
 		return []byte(os.Getenv("ACCESS_JWT_SECRET")), nil
 	})
 
-	if token == nil {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid access token"})
-		return false, nil
-	}
-
-	// If there is any error other than TokenExpired, return 401 Unauthorized
-	if err != nil && !errors.Is(err, jwt.ErrTokenExpired) {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid access token"})
-		return false, nil
-	}
-
 	// Extract the user ID from the token claims
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Failed to access claims"})
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Failed to extract claims"})
 		return false, nil
 	}
 
-	userID, ok := claims["sub"].(uint)
+	userIDFloat, ok := claims["sub"].(float64)
 	if !ok {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Failed to extract user ID from claims"})
 		return false, nil
 	}
 
-	// query user from database and check if user
-	var user models.User
-	result := db.Where("id = ?", userID).First(&user)
+	userIDInt := uint(userIDFloat)
 
-	if result.Error != nil || result.RowsAffected == 0 {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+	if err != nil && !token.Valid {
+		fmt.Println("Error parsing JWT:", err)
+		// cannot abort the request here because the refresh token still might be valid
+		// c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid access token"})
+		return false, &userIDInt
+	}
+
+	return true, &userIDInt
+}
+
+// check validity of refresh token
+func checkRefreshTokenValidity(refreshToken string, hashedTokens []models.RefreshToken) (bool, error) {
+	err := bcrypt.CompareHashAndPassword([]byte(hashedTokens[0].TokenHash), []byte(refreshToken))
+	if err != nil {
+		return false, err
+	}
+
+	// Check if the refresh token has expired
+	if hashedTokens[0].ExpiresAt < time.Now().Unix() {
 		return false, nil
 	}
 
-	return true, &user
-}
-
-// check validity if refresh token
-func isValidRefreshToken(c *gin.Context) bool {
-	db := c.MustGet("db").(*gorm.DB)
-
-	// get refresh token from cookie
-	refreshToken, err := c.Cookie("refresh_token")
-	if err != nil {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Refresh token not found"})
-		return false
-	}
-
-	// get refresh token from database
-	var refreshTokenFromDB models.RefreshToken
-	result := db.Where("token_hash = ?", refreshToken).First(&refreshTokenFromDB)
-
-	if result.Error != nil || result.RowsAffected == 0 {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Refresh token not found"})
-		return false
-	}
-
-	// check if refresh token is expired
-	if refreshTokenFromDB.ExpiresAt < (time.Now().Unix() * 1000) {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Refresh token expired"})
-		return false
-	}
-
-	return true
+	return true, nil
 }

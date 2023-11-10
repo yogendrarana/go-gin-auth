@@ -3,7 +3,7 @@ package handlers
 import (
 	"errors"
 	"go-gin-auth/src/models"
-	"go-gin-auth/src/services/auth"
+	"go-gin-auth/src/services"
 	"go-gin-auth/src/types"
 	"net/http"
 	"time"
@@ -69,33 +69,40 @@ func Register(c *gin.Context) {
 	}
 
 	result = db.Create(&user)
-	if result.Error != nil {
+	if result.Error != nil || result.RowsAffected == 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 		return
 	}
 
-	// generate jwt tokens
-	accessSignedToken, refreshSignedToken, err := auth.GenerateJWTTokensForUser(user.ID)
+	// generate access tokens
+	accessSignedToken, err := services.GenerateAccessToken(user.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return
 	}
 
-	// save refresh token to database
-	refreshToken := models.RefreshToken{
-		UserID:    user.ID,
-		Token:     refreshSignedToken,
-		ExpiresAt: time.Now().Add(time.Hour * 24).Unix(),
+	// generate refresh token
+	refreshToken, hashedToken, err := services.GenerateRefreshTokenAndHash()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
 	}
 
-	result = db.Create(&refreshToken)
-	if result.Error != nil {
+	// Save refresh token in the database
+	dbRefreshToken := models.RefreshToken{
+		UserID:    user.ID,
+		TokenHash: hashedToken,
+		ExpiresAt: time.Now().Add(time.Hour * 24 * 7).Unix(),
+	}
+
+	result = db.Create(&dbRefreshToken)
+	if result.Error != nil || result.RowsAffected == 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save refresh token"})
 		return
 	}
 
 	// set http only cookies (name, value, maxAge, path, domain, secure, httpOnly)
-	c.SetCookie("refresh_token", refreshSignedToken, 86400, "/", "localhost", false, true)
+	c.SetCookie("refresh_token", refreshToken, 24*60*60, "/", "localhost", false, true)
 
 	c.JSON(http.StatusOK, types.APIResponse{
 		Success: true,
@@ -138,14 +145,36 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	accessSignedToken, refreshSignedToken, err := auth.GenerateJWTTokensForUser(user.ID)
+	// generate access tokens
+	accessSignedToken, err := services.GenerateAccessToken(user.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return
 	}
 
+	// generate refresh token
+	refreshToken, hashedToken, err := services.GenerateRefreshTokenAndHash()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+
+	// update refresh token in the database
+	dbRefreshToken := models.RefreshToken{
+		UserID:    user.ID,
+		TokenHash: hashedToken,
+		ExpiresAt: time.Now().Add(time.Hour * 24 * 7).Unix(),
+	}
+
+	updateFields := map[string]interface{}{
+		"token_hash": dbRefreshToken.TokenHash,
+		"expires_at": dbRefreshToken.ExpiresAt,
+	}
+
+	result = db.Model(&models.RefreshToken{}).Where("user_id = ?", user.ID).Updates(updateFields)
+
 	// set http only cookies (name, value, maxAge, path, domain, secure, httpOnly)
-	c.SetCookie("refresh_token", refreshSignedToken, 86400, "/", "localhost", false, true)
+	c.SetCookie("refresh_token", refreshToken, 24*60*60, "/", "localhost", false, true)
 
 	c.JSON(http.StatusOK, types.APIResponse{
 		Success: true,

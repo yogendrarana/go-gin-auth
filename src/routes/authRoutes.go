@@ -1,21 +1,18 @@
-// routes/authRoutes.go
-
 package routes
 
 import (
-	"go-gin-auth/src/controllers"
+	"go-gin-auth/src/handlers"
 	middleware "go-gin-auth/src/middlewares"
 
 	"github.com/gin-gonic/gin"
 )
 
-// InitializeAuthRoutes initializes authentication routes.
 func InitializeAuthRoutes(authGroup *gin.RouterGroup) {
 	// middleware
 	authGroup.Use(middleware.DatabaseMiddleware())
 
 	// routes
-	authGroup.POST("/auth/register", controllers.Register)
-	authGroup.POST("/auth/login", controllers.Login)
-
+	authGroup.POST("/auth/register", handlers.Register)
+	authGroup.POST("/auth/login", handlers.Login)
+	authGroup.POST("/auth/delete", handlers.DeleteUser)
 }

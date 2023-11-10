@@ -30,6 +30,7 @@ func main() {
 	// Initialize routes
 	apiV1 := router.Group("/api/v1")
 	routes.InitializeAuthRoutes(apiV1)
+	routes.InitializeProtectedRoutes(apiV1)
 
 	// By default gin serves on :8080 unless you specify a custom PORT by passing into the Run() method
 	err := router.Run("localhost:" + os.Getenv("PORT"))
