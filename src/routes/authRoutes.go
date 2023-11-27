@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func InitializeAuthRoutes(authGroup *gin.RouterGroup) {
+func AuthRoutes(authGroup *gin.RouterGroup) {
 	// middleware
 	authGroup.Use(middleware.DatabaseMiddleware())
 
