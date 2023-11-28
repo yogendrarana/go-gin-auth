@@ -2,14 +2,14 @@ package routes
 
 import (
 	"go-gin-auth/src/handlers"
-	middleware "go-gin-auth/src/middlewares"
+	middlewares "go-gin-auth/src/middlewares"
 
 	"github.com/gin-gonic/gin"
 )
 
 func AuthRoutes(authGroup *gin.RouterGroup) {
 	// middleware
-	authGroup.Use(middleware.DatabaseMiddleware())
+	authGroup.Use(middlewares.DatabaseMiddleware())
 
 	// routes
 	authGroup.POST("/auth/register", handlers.Register)

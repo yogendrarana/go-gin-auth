@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	custom_errors "go-gin-auth/src/errors"
 	"go-gin-auth/src/models"
 	"go-gin-auth/src/services"
 	"go-gin-auth/src/types"
@@ -37,27 +38,28 @@ func Register(c *gin.Context) {
 	db := c.MustGet("db").(*gorm.DB)
 
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
 		return
 	}
 
 	// validation checks
 	if input.Password != input.ConfirmPassword {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Password do not match."})
+		err := custom_errors.NewAppError("Password do not match.", 400)
+		c.Error(err)
 		return
 	}
 
 	// check if user already exists
 	result := db.Where("email = ?", input.Email).First(&models.User{})
 	if result.Error == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "User already exists."})
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "message": "User already exists."})
 		return
 	}
 
 	// hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcryptCost)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Failed to hash password"})
 		return
 	}
 
@@ -70,21 +72,21 @@ func Register(c *gin.Context) {
 
 	result = db.Create(&user)
 	if result.Error != nil || result.RowsAffected == 0 {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Failed to create user"})
 		return
 	}
 
 	// generate access tokens
 	accessSignedToken, err := services.GenerateAccessToken(user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Failed to generate token"})
 		return
 	}
 
 	// generate refresh token
 	refreshToken, hashedToken, err := services.GenerateRefreshTokenAndHash()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Failed to generate token"})
 		return
 	}
 
@@ -97,7 +99,7 @@ func Register(c *gin.Context) {
 
 	result = db.Create(&dbRefreshToken)
 	if result.Error != nil || result.RowsAffected == 0 {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save refresh token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Failed to save refresh token"})
 		return
 	}
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"go-gin-auth/src/initializers"
+	"go-gin-auth/src/middlewares"
 	"go-gin-auth/src/routes"
 	"log"
 	"os"
@@ -19,15 +20,14 @@ func main() {
 	router := gin.New()
 	router.LoadHTMLGlob("./src/views/*")
 
-	// Serve static files
-	router.GET("/", func(c *gin.Context) {
-		c.File("./src/views/index.html")
-	})
-
 	// Middlewares
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
 	router.Use(gin.ErrorLogger())
+	router.Use(middlewares.ErrorMiddleware)
+
+	// Serve static files
+	router.GET("/", func(c *gin.Context) { c.File("./src/views/index.html") })
 
 	// Initialize routes
 	apiV1 := router.Group("/api/v1")

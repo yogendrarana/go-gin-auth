@@ -1,4 +1,4 @@
-package middleware
+package middlewares
 
 import (
 	"go-gin-auth/src/initializers"
