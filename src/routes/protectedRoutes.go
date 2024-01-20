@@ -7,9 +7,9 @@ import (
 )
 
 func ProtectedRoutes(authGroup *gin.RouterGroup) {
-	authGroup.GET("/test/protected", middleware.AuthMiddleware(), func(c *gin.Context) {
-		user := c.MustGet("user")
-		c.JSON(200, gin.H{
+	authGroup.GET("/protected", middleware.AuthMiddleware(), func(ctx *gin.Context) {
+		user := ctx.MustGet("user")
+		ctx.JSON(200, gin.H{
 			"message": "Protected route test successful!",
 			"user":    user,
 		})

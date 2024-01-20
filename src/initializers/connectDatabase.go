@@ -10,7 +10,7 @@ import (
 
 var db *gorm.DB
 
-func ConnectDatabase() (*gorm.DB, error) {
+func ConnectDatabase() {
 	var err error
 
 	dns := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
@@ -23,12 +23,12 @@ func ConnectDatabase() (*gorm.DB, error) {
 
 	db, err = gorm.Open(mysql.Open(dns), &gorm.Config{})
 	if err != nil {
-		return nil, err
+		// Handle the error as needed, e.g., log it or exit the program
+		fmt.Println("Failed to connect to the database:", err)
+		return
 	}
 
 	fmt.Println("Database connected")
-
-	return db, err
 }
 
 // GetDB returns a handle to the DB object

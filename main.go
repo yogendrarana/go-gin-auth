@@ -24,7 +24,7 @@ func main() {
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
 	router.Use(gin.ErrorLogger())
-	router.Use(middlewares.ErrorMiddleware)
+	router.Use(middlewares.DatabaseMiddleware())
 
 	// Serve static files
 	router.GET("/", func(c *gin.Context) { c.File("./src/views/index.html") })
@@ -32,10 +32,16 @@ func main() {
 	// Initialize routes
 	apiV1 := router.Group("/api/v1")
 	routes.AuthRoutes(apiV1)
+	routes.TokenRoutes(apiV1)
 	routes.ProtectedRoutes(apiV1)
 
 	// By default gin serves on :8080 unless you specify a custom PORT by passing into the Run() method
-	err := router.Run("localhost:" + os.Getenv("PORT"))
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8000"
+	}
+
+	err := router.Run("localhost:" + port)
 	if err != nil {
 		log.Fatal(err)
 	}
