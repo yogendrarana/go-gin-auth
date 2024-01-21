@@ -1,9 +1,9 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"go-gin-auth/src/models"
-	"net/http"
 	"os"
 	"time"
 
@@ -46,27 +46,23 @@ func ValidateJwtToken(accessToken string, ctx *gin.Context) (bool, *uint) {
 		return []byte(os.Getenv("ACCESS_JWT_SECRET")), nil
 	})
 
+	if err != nil {
+		return false, nil
+	}
+	fmt.Println("tokennnnnn", token)
+
 	// Extract the user ID from the token claims
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Failed to extract claims"})
 		return false, nil
 	}
 
 	userIDFloat, ok := claims["sub"].(float64)
 	if !ok {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Failed to extract user ID from claims"})
 		return false, nil
 	}
 
 	userIDInt := uint(userIDFloat)
-
-	if err != nil && !token.Valid {
-		fmt.Println("Error parsing JWT:", err)
-		// cannot abort the request here because the refresh token still might be valid
-		// ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid access token"})
-		return false, &userIDInt
-	}
 
 	return true, &userIDInt
 }
@@ -84,17 +80,36 @@ func GenerateRefreshTokenAndHash() (string, string, error) {
 	return refreshToken, string(hashedToken), nil
 }
 
-// check validity of refresh token
-func ValidateRefreshToken(refreshToken string, hashedTokens []models.RefreshToken) (bool, error) {
-	err := bcrypt.CompareHashAndPassword([]byte(hashedTokens[0].TokenHash), []byte(refreshToken))
-	if err != nil {
-		return false, err
+func ValidateRefreshToken(refreshToken string, refreshTokens []models.RefreshToken) (*models.RefreshToken, error) {
+	var matchingToken *models.RefreshToken
+
+	// Loop through the array of refresh tokens
+	for _, tkn := range refreshTokens {
+		// Compare the token in the cookie with the hashed token in the database
+		err := bcrypt.CompareHashAndPassword([]byte(tkn.TokenHash), []byte(refreshToken))
+		if err != nil {
+			fmt.Println("error hai", err)
+		}
+
+		if err == nil {
+			// If the comparison is successful, store the matching refresh token
+			matchingToken = &tkn
+			break
+		}
 	}
 
-	// Check if the refresh token has expired
-	if hashedTokens[0].ExpiresAt < time.Now().Unix() {
-		return false, nil
+	// Check if a matching token was found
+	if matchingToken == nil {
+		return nil, errors.New("Refresh token not found or invalid")
 	}
 
-	return true, nil
+	// Check the expiration of the matching refresh token
+	validityDuration := 7 * 24 * time.Hour
+	if time.Now().Sub(matchingToken.CreatedAt) > validityDuration {
+		// If the token has expired, return an error or handle it as needed
+		return nil, errors.New("Refresh token has expired")
+	}
+
+	// If everything is valid, return the matching refresh token
+	return matchingToken, nil
 }

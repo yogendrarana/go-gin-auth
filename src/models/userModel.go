@@ -17,6 +17,8 @@ type User struct {
 // Get user by ID
 func GetUserByID(db *gorm.DB, userID uint) (*User, error) {
 	var user User
-	err := db.Preload("RefreshTokens").Where("id = ?", userID).First(&user).Error
+
+	err := db.Where("id = ?", userID).First(&user).Error
+
 	return &user, err
 }

@@ -6,7 +6,6 @@ import (
 	"go-gin-auth/src/services"
 	"go-gin-auth/src/types"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -84,7 +83,7 @@ func Register(ctx *gin.Context) {
 	}
 
 	// Save refresh token in the database
-	dbRefreshToken := models.RefreshToken{UserID: user.ID, TokenHash: hashedToken, ExpiresAt: time.Now().Add(time.Hour * 24 * 7).Unix()}
+	dbRefreshToken := models.RefreshToken{UserID: user.ID, TokenHash: hashedToken}
 	result = db.Create(&dbRefreshToken)
 	if result.Error != nil || result.RowsAffected == 0 {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Failed to save refresh token"})
@@ -153,12 +152,10 @@ func Login(ctx *gin.Context) {
 	dbRefreshToken := models.RefreshToken{
 		UserID:    user.ID,
 		TokenHash: hashedToken,
-		ExpiresAt: time.Now().Add(time.Hour * 24 * 7).Unix(),
 	}
 
 	updateFields := map[string]interface{}{
 		"token_hash": dbRefreshToken.TokenHash,
-		"expires_at": dbRefreshToken.ExpiresAt,
 	}
 
 	result = db.Model(&models.RefreshToken{}).Where("user_id = ?", user.ID).Updates(updateFields)

@@ -7,5 +7,5 @@ import (
 )
 
 func TokenRoutes(tokenGroup *gin.RouterGroup) {
-	tokenGroup.GET("/token/refresh", handlers.HandleRefreshToken)
+	tokenGroup.GET("/token/new-access-token", handlers.HandleRefreshToken)
 }

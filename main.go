@@ -33,7 +33,7 @@ func main() {
 	apiV1 := router.Group("/api/v1")
 	routes.AuthRoutes(apiV1)
 	routes.TokenRoutes(apiV1)
-	routes.ProtectedRoutes(apiV1)
+	routes.AdminRoutes(apiV1)
 
 	// By default gin serves on :8080 unless you specify a custom PORT by passing into the Run() method
 	port := os.Getenv("PORT")
